@@ -132,6 +132,14 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check Latest Image Tag
+        run: |
+          latest_version=${{ env.version }}
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.version }}" = "latest" ]; then
+            latest_version=latest
+          fi
+          echo "latest_version=${latest_version}" >> $GITHUB_ENV
+
       - name: Build and Push Docker Images
         uses: docker/build-push-action@v6
         with:
@@ -142,14 +150,7 @@ jobs:
             VERSION=${{ env.version }}
           tags: |
             ghcr.io/${{ github.repository }}:${{ env.version }}
+            ghcr.io/${{ github.repository }}:${{ env.latest_version }}
           outputs: type=image,oci-mediatypes=true,compression=zstd,compression-level=3,force-compression=true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Check Latest Image
-        run: |
-          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.version }}" = "latest" ]; then
-            docker pull ghcr.io/${{ github.repository }}:${{ env.version }}
-            docker tag ghcr.io/${{ github.repository }}:${{ env.version }} ghcr.io/${{ github.repository }}:latest
-            docker push ghcr.io/${{ github.repository }}:latest
-          fi
