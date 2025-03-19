@@ -1,0 +1,78 @@
+project_name: cosign
+version: 2
+
+env:
+  - GO111MODULE=on
+  - CGO_ENABLED=1
+  - DOCKER_CLI_EXPERIMENTAL=enabled
+  - COSIGN_YES=true
+
+# Prevents parallel builds from stepping on each others toes downloading modules
+before:
+  hooks:
+    - go mod tidy
+    - git --no-pager diff --exit-code go.mod go.sum
+
+gomod:
+  proxy: true
+
+sboms:
+  - artifacts: binary
+
+builds:
+  - id: linux
+    binary: cosign-linux-{{ .Arch }}
+    no_unique_dist_dir: true
+    main: ./cmd/cosign
+    flags:
+      - -trimpath
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+      - arm
+      - s390x
+      - ppc64le
+      - riscv64
+      - loong64
+    goarm:
+      - '7'
+    ldflags:
+      - -w -s
+      - -X sigs.k8s.io/release-utils/version.gitVersion={{ .Env.GIT_VERSION }}
+      - -X sigs.k8s.io/release-utils/version.gitCommit={{ .Env.GIT_HASH }}
+      - -X sigs.k8s.io/release-utils/version.gitTreeState={{ .Env.GIT_TREESTATE }}
+      - -X sigs.k8s.io/release-utils/version.buildDate={{ .Env.BUILD_DATE }}
+    env:
+      - CGO_ENABLED=0
+
+archives:
+  - id: binaries
+    formats: [ 'binary' ]
+    name_template: "{{ .Binary }}"
+    allow_different_binary_count: true
+
+  - id: archives
+    formats: [ 'tar.gz' ]
+    name_template: "{{ .Binary }}-v{{ .Version }}-{{ .Os }}-{{ .Arch }}{{- if .Arm }}v{{ .Arm }}{{ end }}"
+    format_overrides:
+      - goos: windows
+        formats: [ 'zip' ]
+
+checksum:
+  name_template: "{{ .ProjectName }}_checksums.txt"
+
+snapshot:
+  version_template: SNAPSHOT-{{ .ShortCommit }}
+
+release:
+  github:
+    owner: loong64
+    name: cosign
+  footer: |
+    ### Thanks to all contributors!
+
+  extra_files:
+    - glob: "./release/release-cosign.pub"

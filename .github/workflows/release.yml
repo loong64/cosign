@@ -1,0 +1,111 @@
+on:
+  schedule:
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release'
+        required: true
+        default: 'latest'
+
+name: Checkout and Create Release Version
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get-version.outputs.version }}
+      build: ${{ steps.check-build.outputs.build }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check Version
+        id: get-version
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.version }}" = "latest" ]; then
+            version=$(curl -s 'https://api.github.com/repos/sigstore/cosign/releases/latest' | jq -r ".tag_name")
+          else
+            version=${{ github.event.inputs.version }}
+          fi
+          echo "Current Version: ${version}"
+          if [ -z "${version}" ] || [ "${version}" == "null" ]; then
+            echo "Failed to get version"
+            exit 1
+          fi
+          echo "version=${version}" >> $GITHUB_ENV
+          echo "version=${version}" >> $GITHUB_OUTPUT
+
+      - name: Check Build
+        id: check-build
+        run: |
+          gh release view ${version} -R ${{ github.repository }} | grep cosign-linux-loong64 >/dev/null 2>&1 || echo "build=1" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Tag
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Release ${version}" || echo "No changes to commit"
+          git tag -a "${version}" -m "Release ${version}" || true
+          git push origin "${version}" || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release:
+    needs: check
+    runs-on: ubuntu-latest
+    if: needs.check.outputs.build == 1
+    env:
+      version: ${{ needs.check.outputs.version }}
+    steps:
+      - uses: anchore/sbom-action@v0
+
+      - name: Check Version
+        run: |
+          echo "Current Version: ${version}"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          repository: sigstore/cosign
+          ref: ${{ env.version }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Prepare Environment
+        run: |
+          GIT_VERSION=$(git describe --tags --always --dirty)
+          GIT_HASH=$(git rev-parse HEAD)
+          GIT_TREESTATE=$(git diff --quiet >/dev/null 2>&1 && echo "clean" || echo "dirty")
+          DATE_FMT="+%Y-%m-%dT%H:%M:%SZ"
+          SOURCE_DATE_EPOCH=$(git log -1 --no-show-signature --pretty=%ct)
+          BUILD_DATE=$(date -u -d "@${SOURCE_DATE_EPOCH}" "${DATE_FMT}" 2>/dev/null || date -u -r "${SOURCE_DATE_EPOCH}" "${DATE_FMT}" 2>/dev/null || date -u "${DATE_FMT}")
+          echo "GIT_VERSION=${GIT_VERSION}" >> $GITHUB_ENV
+          echo "GIT_HASH=${GIT_HASH}" >> $GITHUB_ENV
+          echo "GIT_TREESTATE=${GIT_TREESTATE}" >> $GITHUB_ENV
+          echo "BUILD_DATE=${BUILD_DATE}" >> $GITHUB_ENV
+
+          echo "============================="
+          echo "GIT_VERSION: ${GIT_VERSION}"
+          echo "GIT_HASH: ${GIT_HASH}"
+          echo "GIT_TREESTATE: ${GIT_TREESTATE}"
+          echo "BUILD_DATE: ${BUILD_DATE}"
+
+      - name: Get File
+        run: |
+          wget -O ../goreleaser.test https://github.com/${{ github.repository }}/raw/refs/heads/main/.goreleaser.yml
+
+      - name: Build Binary
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --config ../goreleaser.test --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
