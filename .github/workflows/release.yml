@@ -137,6 +137,7 @@ jobs:
         with:
           platforms: linux/loong64
           push: true
+          provenance: false
           build-args: |
             VERSION=${{ env.version }}
           tags: |
