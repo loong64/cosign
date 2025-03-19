@@ -54,7 +54,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  release:
+  releases:
     needs: check
     runs-on: ubuntu-latest
     if: needs.check.outputs.build == 1
@@ -109,3 +109,46 @@ jobs:
           args: release --config ../goreleaser.test --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  images:
+    needs: [check, releases]
+    runs-on: ubuntu-latest
+    env:
+      version: ${{ needs.check.outputs.version }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Docker Images
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/loong64
+          push: true
+          build-args: |
+            VERSION=${{ env.version }}
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ env.version }}
+          outputs: type=image,oci-mediatypes=true,compression=zstd,compression-level=3,force-compression=true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Check Latest Image
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.version }}" = "latest" ]; then
+            docker pull ghcr.io/${{ github.repository }}:${{ env.version }}
+            docker tag ghcr.io/${{ github.repository }}:${{ env.version }} ghcr.io/${{ github.repository }}:latest
+            docker push ghcr.io/${{ github.repository }}:latest
+          fi
