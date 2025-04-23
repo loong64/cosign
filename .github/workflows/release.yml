@@ -148,8 +148,21 @@ jobs:
           build-args: |
             VERSION=${{ env.version }}
           tags: |
-            ghcr.io/${{ github.repository }}:${{ env.version }}
-            ghcr.io/${{ github.repository }}:${{ env.latest_version }}
+            ghcr.io/${{ github.repository }}:${{ env.version }}-loong64
           outputs: type=image,oci-mediatypes=true,compression=zstd,compression-level=3,force-compression=true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Prepare configuration
+        run: |
+          wget -qO- https://github.com/google/go-containerregistry/releases/latest/download/go-containerregistry_Linux_x86_64.tar.gz | sudo tar -xzf - -C /usr/local/bin/ crane
+          sudo chmod +x /usr/local/bin/crane
+          sudo chown root:root /usr/local/bin/crane
+
+      - name: Pull and Push Images
+        run: |
+          crane index append -t ghcr.io/loong64/cosign:${{ env.version }} -m ghcr.io/loong64/cosign:${{ env.version }}-loong64 -m ghcr.io/sigstore/cosign/cosign:${{ env.version }}
+          latest_version=${{ env.version }}
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.version }}" = "latest" ]; then
+            crane cp ghcr.io/loong64/cosign:${{ env.version }} ghcr.io/loong64/cosign:latest
+          fi
