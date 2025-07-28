@@ -148,7 +148,7 @@ jobs:
           build-args: |
             VERSION=${{ env.version }}
           tags: |
-            ghcr.io/${{ github.repository }}:${{ env.version }}-loong64
+            ghcr.io/${{ github.repository }}/cosign:${{ env.version }}-loong64
           outputs: type=image,oci-mediatypes=true,compression=zstd,compression-level=3,force-compression=true
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -161,8 +161,8 @@ jobs:
 
       - name: Pull and Push Images
         run: |
-          crane index append -t ghcr.io/loong64/cosign:${{ env.version }} -m ghcr.io/loong64/cosign:${{ env.version }}-loong64 -m ghcr.io/sigstore/cosign/cosign:${{ env.version }}
+          crane index append -t ghcr.io/${{ github.repository }}/cosign:${{ env.version }} -m ghcr.io/${{ github.repository }}/cosign:${{ env.version }}-loong64 -m ghcr.io/sigstore/cosign/cosign:${{ env.version }}
           latest_version=${{ env.version }}
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.version }}" = "latest" ]; then
-            crane cp ghcr.io/loong64/cosign:${{ env.version }} ghcr.io/loong64/cosign:latest
+            crane cp ghcr.io/${{ github.repository }}/cosign:${{ env.version }} ghcr.io/${{ github.repository }}/cosign:latest
           fi
